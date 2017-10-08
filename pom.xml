@@ -11,7 +11,7 @@
 
    <properties>
       <aws.sdk.version>1.11.202</aws.sdk.version>
-      <alfresco.lambda.utils.version>0.1-SNAPSHOT</alfresco.lambda.utils.version>
+      <alfresco.lambda.utils.version>1.0</alfresco.lambda.utils.version>
       <junit.version>4.12</junit.version>
       <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
       <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
