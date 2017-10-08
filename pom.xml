@@ -7,7 +7,7 @@
    <version>0.1-SNAPSHOT</version>
    <name>alfresco-lambda-empty-s3-bucket</name>
    <description>Lambda function that can be used in a CloudFormation template to empty an S3 bucket.</description>
-   <url>https://github.com/gavincornwell/alfresco-lambda-empty-s3-bucket</url>
+   <url>https://github.com/Alfresco/alfresco-lambda-empty-s3-bucket</url>
 
    <properties>
       <aws.sdk.version>1.11.202</aws.sdk.version>
@@ -18,9 +18,9 @@
    </properties>
 
    <scm>
-      <connection>https://github.com/gavincornwell/alfresco-lambda-empty-s3-bucket.git</connection>
-      <developerConnection>https://github.com/gavincornwell/alfresco-lambda-empty-s3-bucket.git</developerConnection>
-      <url>https://github.com/gavincornwell/alfresco-lambda-empty-s3-bucket</url>
+      <connection>https://github.com/Alfresco/alfresco-lambda-empty-s3-bucket.git</connection>
+      <developerConnection>https://github.com/Alfresco/alfresco-lambda-empty-s3-bucket.git</developerConnection>
+      <url>https://github.com/Alfresco/alfresco-lambda-empty-s3-bucket</url>
       <tag>HEAD</tag>
    </scm>
 
