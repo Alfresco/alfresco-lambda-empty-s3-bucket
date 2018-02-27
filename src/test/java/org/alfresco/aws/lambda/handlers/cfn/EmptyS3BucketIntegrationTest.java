@@ -15,6 +15,7 @@ import static org.junit.Assert.assertFalse;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.StringWriter;
 import java.util.List;
@@ -48,6 +49,7 @@ public class EmptyS3BucketIntegrationTest
     private static final String STACK_NAME_PREFIX = "empty-s3-bucket-test-";
     private static final String JAR_FILE_NAME = "alfresco-lambda-empty-s3-bucket.jar";
     private static final String CFN_FILE_NAME = "cloudformation.yaml";
+    private static final String CFN_FILE_NAME_NOT_DELETE_CONTENT = "cloudformation-not-empty-bucket.yaml";
     private static final String REPLACE_TOKEN = "[code-bucket]";
     
     private static final String OBJECT1_NAME = "object1.txt";
@@ -58,8 +60,8 @@ public class EmptyS3BucketIntegrationTest
     private static AmazonCloudFormation cfn;
     private static String codeBucketName;
     private static String contentBucketName;
-    private static String cfnTemplate;
-    
+    private static String userDir;
+
     @BeforeClass
     public static void setup() throws Exception
     {
@@ -72,45 +74,48 @@ public class EmptyS3BucketIntegrationTest
         System.out.println("Created code bucket: " + codeBucketName);
         
         // get the maven "target" folder location
-        String userDir = System.getProperty("user.dir");
-        String targetDir = userDir + File.separator + "target";
+        userDir = System.getProperty("user.dir");
         
-        // generate cloudformation template from the original
-        String cfnInputFilePath = userDir + File.separator + "src" + File.separator + "test" + 
-                    File.separator + "resources" + File.separator + CFN_FILE_NAME;
+        // upload JAR file to S3 bucket
+        String targetDir = userDir + File.separator + "target";
+        File jarFile = new File(targetDir + File.separator + JAR_FILE_NAME);
+        System.out.println("Uploading file: " + jarFile.getCanonicalPath() + "...");
+        s3.putObject(codeBucketName, JAR_FILE_NAME, jarFile);
+        System.out.println("Upload complete");
+    }
+
+    // generate cloudformation template from the original
+    private static String processCFN(String cfnFileName) throws Exception
+    {
+        String cfnInputFilePath = userDir + File.separator + "src" + File.separator + "test" +
+                File.separator + "resources" + File.separator + cfnFileName;
         BufferedReader reader = new BufferedReader(new FileReader(cfnInputFilePath));
         StringWriter writer = new StringWriter();
-        
+
         // read cfn template file into memory, replacing the placeholder with the bucket name
         try
         {
-            String line; 
-            while (null != ((line = reader.readLine()))) 
+            String line;
+            while (null != ((line = reader.readLine())))
             {
                 if (line.indexOf(REPLACE_TOKEN) != -1)
                 {
                     line = line.replace(REPLACE_TOKEN, codeBucketName);
                 }
-                
+
                 writer.write(line);
                 writer.write("\n");
             }
-            
-            cfnTemplate = writer.toString();
+
+            return writer.toString();
         }
         finally
         {
             reader.close();
             writer.close();
         }
-        
-        // upload JAR file to S3 bucket
-        File jarFile = new File(targetDir + File.separator + JAR_FILE_NAME);
-        System.out.println("Uploading file: " + jarFile.getCanonicalPath() + "...");
-        s3.putObject(codeBucketName, JAR_FILE_NAME, jarFile);
-        System.out.println("Upload complete");
     }
-    
+
     @AfterClass
     public static void tearDown() throws Exception
     {
@@ -134,29 +139,29 @@ public class EmptyS3BucketIntegrationTest
         String stackName = STACK_NAME_PREFIX + System.currentTimeMillis();
         System.out.print("Creating stack: " + stackName + "...");
         CreateStackRequest createRequest = new CreateStackRequest().
-                    withStackName(stackName).
-                    withTemplateBody(cfnTemplate).
-                    withCapabilities("CAPABILITY_IAM").
-                    withTimeoutInMinutes(5);
+                withStackName(stackName).
+                withTemplateBody(processCFN(CFN_FILE_NAME)).
+                withCapabilities("CAPABILITY_IAM").
+                withTimeoutInMinutes(5);
         cfn.createStack(createRequest);
-        
-        // watch the stack until it completes, checking status every 5 seconds 
+
+        // watch the stack until it completes, checking status every 5 seconds
         String stackStatus = "CREATE_IN_PROGRESS";
         Stack stack = null;
         while (stackStatus.contains("_IN_PROGRESS"))
         {
             Thread.sleep(5000);
             System.out.print(".");
-            
+
             DescribeStacksRequest describeRequest = new DescribeStacksRequest().withStackName(stackName);
             DescribeStacksResult describeResult = cfn.describeStacks(describeRequest);
             stack = describeResult.getStacks().get(0);
             stackStatus = stack.getStackStatus();
         }
-        
+
         System.out.println("");
         System.out.println("Stack created with status: " + stackStatus);
-        
+
         if ("CREATE_COMPLETE".equals(stackStatus) && stack != null)
         {
             // grab the bucket name from the outputs and store in contentBucketName
@@ -169,7 +174,7 @@ public class EmptyS3BucketIntegrationTest
                     break;
                 }
             }
-            
+
             if (contentBucketName != null)
             {
                 // add some content to the bucket
@@ -178,19 +183,19 @@ public class EmptyS3BucketIntegrationTest
                 s3.putObject(contentBucketName, OBJECT3_NAME, "This is the content for object 3");
             }
         }
-        
+
         // delete the stack
         System.out.print("Deleting stack: " + stackName + "...");
         DeleteStackRequest deleteRequest = new DeleteStackRequest().withStackName(stackName);
         cfn.deleteStack(deleteRequest);
-        
+
         // watch the stack until it fully deletes, checking status every 5 seconds
         stackStatus = "DELETE_IN_PROGRESS";
         while (stackStatus.contains("_IN_PROGRESS"))
         {
             Thread.sleep(5000);
             System.out.print(".");
-            
+
             try
             {
                 DescribeStacksRequest describeRequest = new DescribeStacksRequest().withStackName(stackName);
@@ -205,11 +210,97 @@ public class EmptyS3BucketIntegrationTest
                 break;
             }
         }
-        
+
         System.out.println("");
         System.out.println("Stack deleted");
-        
+
         // make sure the content bucket has gone
         assertFalse("Bucket '" + contentBucketName + "' should have been deleted", s3.doesBucketExistV2(contentBucketName));
+    }
+
+    @Test
+    public void testTemplateCreateAndNotDeleteContent() throws Exception
+    {
+        // create stack
+        String stackName = STACK_NAME_PREFIX + System.currentTimeMillis();
+        System.out.print("Creating stack: " + stackName + "...");
+        CreateStackRequest createRequest = new CreateStackRequest().
+                withStackName(stackName).
+                withTemplateBody(processCFN(CFN_FILE_NAME_NOT_DELETE_CONTENT)).
+                withCapabilities("CAPABILITY_IAM").
+                withTimeoutInMinutes(5);
+        cfn.createStack(createRequest);
+
+        // watch the stack until it completes, checking status every 5 seconds
+        String stackStatus = "CREATE_IN_PROGRESS";
+        Stack stack = null;
+        while (stackStatus.contains("_IN_PROGRESS"))
+        {
+            Thread.sleep(5000);
+            System.out.print(".");
+
+            DescribeStacksRequest describeRequest = new DescribeStacksRequest().withStackName(stackName);
+            DescribeStacksResult describeResult = cfn.describeStacks(describeRequest);
+            stack = describeResult.getStacks().get(0);
+            stackStatus = stack.getStackStatus();
+        }
+
+        System.out.println("");
+        System.out.println("Stack created with status: " + stackStatus);
+
+        if ("CREATE_COMPLETE".equals(stackStatus) && stack != null)
+        {
+            // grab the bucket name from the outputs and store in contentBucketName
+            List<Output> outputs = stack.getOutputs();
+            for (Output output : outputs)
+            {
+                if ("BucketName".equals(output.getOutputKey()))
+                {
+                    contentBucketName = output.getOutputValue();
+                    break;
+                }
+            }
+
+            if (contentBucketName != null)
+            {
+                // add some content to the bucket
+                s3.putObject(contentBucketName, OBJECT1_NAME, "This is the content for object 1");
+                s3.putObject(contentBucketName, OBJECT2_NAME, "This is the content for object 2");
+                s3.putObject(contentBucketName, OBJECT3_NAME, "This is the content for object 3");
+            }
+        }
+
+        // delete the stack
+        System.out.print("Deleting stack: " + stackName + "...");
+        DeleteStackRequest deleteRequest = new DeleteStackRequest().withStackName(stackName);
+        cfn.deleteStack(deleteRequest);
+
+        // watch the stack until it fully deletes, checking status every 5 seconds
+        stackStatus = "DELETE_IN_PROGRESS";
+        while (stackStatus.contains("_IN_PROGRESS"))
+        {
+            Thread.sleep(5000);
+            System.out.print(".");
+
+            try
+            {
+                DescribeStacksRequest describeRequest = new DescribeStacksRequest().withStackName(stackName);
+                DescribeStacksResult describeResult = cfn.describeStacks(describeRequest);
+                stack = describeResult.getStacks().get(0);
+                stackStatus = stack.getStackStatus();
+            }
+            catch (SdkClientException sce)
+            {
+                // once the stack has been deleted an exception will
+                // be thrown trying to get it's details
+                break;
+            }
+        }
+
+        System.out.println("");
+        System.out.println("Stack deleted");
+
+        // make sure the content bucket is not gone
+        assertFalse("Bucket '" + contentBucketName + "' should not have been deleted", !s3.doesBucketExistV2(contentBucketName));
     }
 }

@@ -2,7 +2,7 @@
  * #%L
  * Alfresco Lambda Java Utils
  * %%
- * Copyright (C) 2005 - 2017 Alfresco Software Limited
+ * Copyright (C) 2005 - 2018 Alfresco Software Limited
  * %%
  * License rights for this program may be obtained from Alfresco Software, Ltd.
  * pursuant to a written agreement and any use of this program without such an
@@ -45,10 +45,20 @@ public class EmptyS3Bucket extends AbstractCustomResourceHandler
     {
         // get the bucket name from the request
         String bucketName = (String)request.ResourceProperties.get("BucketName");
-        
-        logDebug("Retrieved bucket name from request: " + bucketName, context);
-        
-        // empty the bucket
-        S3Cleaner.emptyBucket(AmazonS3ClientBuilder.defaultClient(), bucketName, false, context);
+
+        // boolean for deleting content
+        String deleteContentProp = (String)request.ResourceProperties.get("DeleteContent");
+        boolean deleteContent = deleteContentProp==null?true:Boolean.getBoolean(deleteContentProp);
+
+        // boolean for deleting the bucket after emptying
+        String deleteBucketProp = (String)request.ResourceProperties.get("DeleteBucket");
+        boolean deleteBucket = deleteBucketProp==null?false:Boolean.getBoolean(deleteBucketProp);
+
+        if(deleteContent)
+        {
+            logDebug("Retrieved bucket name from request: " + bucketName, context);
+            S3Cleaner.emptyBucket(AmazonS3ClientBuilder.defaultClient(), bucketName, deleteBucket, context);
+        }
+
     }
 }
